@@ -1,6 +1,14 @@
-# LinkedIn People Scraper
+# LinkedIn People Scraper & API
 
-Scrapes LinkedIn people search results using direct API calls (like Apify actors do). No browser automation needed — just your session cookies.
+A powerful LinkedIn scraper that uses your session cookies to fetch people profiles directly from LinkedIn's Voyager API (no browser automation needed).
+
+## Features
+
+- **Direct API Access**: Uses `li_at` and `JSESSIONID` cookies to mimic legitimate requests.
+- **Fast & Lightweight**: No Selenium/Puppeteer overhead.
+- **API Server**: Built-in HTTP server to trigger scrapes remotely.
+- **Unlimited Pagination**: Scrape all available results for a company/role.
+- **Webhook Support**: Automatically send scraped data to a webhook (e.g., n8n, Zapier).
 
 ## Setup
 
@@ -14,56 +22,68 @@ pip install -r requirements.txt
 
 1. Open **Chrome** and go to [linkedin.com](https://www.linkedin.com)
 2. Make sure you're **logged in**
-3. Open **DevTools** → `F12` or `Cmd+Option+I`
+3. Open **DevTools** (`F12` or `Cmd+Option+I`)
 4. Go to **Application** tab → **Cookies** → `https://www.linkedin.com`
-5. Find and copy these two cookies:
-
-   - **`li_at`** — your session token (long string)
-   - **`JSESSIONID`** — CSRF token (looks like `"ajax:1234567890"` with quotes)
+5. Copy these two values:
+   - **`li_at`**: Your session token.
+   - **`JSESSIONID`**: Your CSRF token (remove quotes if present, e.g., `ajax:...`).
 
 ### 3. Configure `.env`
 
-Edit the `.env` file and fill in your values:
+Create a `.env` file based on the example:
 
 ```env
-LI_AT=AQEDAQxxxxxx...your_li_at_value
-JSESSIONID=ajax:1234567890123456789
-
-WEBHOOK_URL=https://your-webhook-url.com/endpoint
-GEO_URN=102713980
-COMPANY_URLS=https://www.linkedin.com/company/google/,https://www.linkedin.com/company/meta/
-TAGS=brand,marketing
-MAX_PAGES=5
+LI_AT="AQEDATtq..."
+JSESSIONID="ajax:1234..."
+WEBHOOK_URL="https://your-webhook.com/endpoint"
+GEO_URN="102713980"   # India (optional)
+SEARCH_MODE="title"   # 'title' or 'keywords'
+MAX_PAGES=0           # 0 for unlimited
 DELAY_BETWEEN_REQUESTS=2
+PORT=8000
 ```
 
-### 4. Run
+## Usage
 
+### Option 1: Run the API Server (Recommended)
+
+Start the server:
+```bash
+python server.py
+```
+
+Send a scraping request:
+```bash
+curl -X POST http://localhost:8000/scrape \
+  -H "Content-Type: application/json" \
+  -d '{
+    "company_url": "https://www.linkedin.com/company/google",
+    "tags": ["software engineer"],
+    "max_pages": 0
+  }'
+```
+
+### Option 2: Run as CLI Script
+
+Edit `.env` with your target `COMPANY_URLS` and `TAGS`, then run:
 ```bash
 python scraper.py
 ```
 
-## Output
+## Deployment
 
-- **Console**: Real-time progress and summary
-- **JSON files**: `output_<company-slug>.json` saved in the project directory
-- **Webhook**: Results POSTed to your configured webhook URL
+### Docker
 
-## Configuration
+Build and run the container:
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `LI_AT` | LinkedIn session cookie | required |
-| `JSESSIONID` | LinkedIn CSRF cookie | required |
-| `WEBHOOK_URL` | Webhook endpoint for results | optional |
-| `GEO_URN` | LinkedIn geo filter (102713980 = India) | optional |
-| `COMPANY_URLS` | Comma-separated company URLs | required |
-| `TAGS` | Comma-separated search keywords | `brand` |
-| `MAX_PAGES` | Max pages per tag (10 results/page) | `5` |
-| `DELAY_BETWEEN_REQUESTS` | Seconds between API calls | `2` |
+```bash
+docker build -t linkedin-scraper .
+docker run -p 8000:8000 --env-file .env linkedin-scraper
+```
 
-## Notes
+### Cloud (Render/Railway/Heroku)
 
-- Cookies expire after some time. If you get auth errors, re-copy fresh cookies.
-- Keep `DELAY_BETWEEN_REQUESTS` at 2+ seconds to avoid rate limiting.
-- LinkedIn may temporarily block your account if you scrape too aggressively.
+1. **Push to GitHub** (see instructions below).
+2. Connect your repo to a cloud provider.
+3. Add your **Environment Variables** (`LI_AT`, `JSESSIONID`, etc.) in the cloud dashboard.
+4. Deploy!

@@ -92,12 +92,28 @@ class LinkedInClient:
                 c = elements[0]
                 return c.get("entityUrn", "").split(":")[-1], c.get("name", slug), slug
 
+        # Fallback: try the newer dash endpoint
+        url2 = f"{API_BASE}/organization/dash/companies?q=universalName&universalName={slug}"
+        resp2 = self._get(url2)
+        if resp2:
+            # Try extracting from included entities
+            for entity in resp2.get("included", []):
+                if isinstance(entity, dict) and entity.get("name"):
+                    eid = entity.get("entityUrn", "").split(":")[-1]
+                    return eid, entity["name"], slug
+
         # Fallback: HTML scrape
         try:
             resp = self.session.get(company_url, timeout=15)
             if resp.status_code == 200:
                 html = resp.text
-                for pat in [r'"companyId":(\d+)', r'"objectUrn":"urn:li:company:(\d+)"']:
+                patterns = [
+                    r'"companyId":(\d+)',
+                    r'"objectUrn":"urn:li:company:(\d+)"',
+                    r'company:(\d+)',
+                    r'/company/(\d+)',
+                ]
+                for pat in patterns:
                     m = re.search(pat, html)
                     if m:
                         name_m = re.search(r'"name":"([^"]+)"', html)
@@ -231,7 +247,7 @@ def scrape(company_url, tags, geo_urn="", search_mode=None, max_pages=None):
     if search_mode:
         SEARCH_MODE = search_mode
 
-    _max = max_pages if max_pages else MAX_PAGES
+    _max = int(max_pages) if max_pages is not None else MAX_PAGES
 
     company_id, company_name, slug = client.get_company_id(company_url)
     if not company_id:
@@ -243,7 +259,11 @@ def scrape(company_url, tags, geo_urn="", search_mode=None, max_pages=None):
     for tag in tags:
         start = 0
         page = 0
-        while page < _max:
+        while True:
+            # Check for max pages limit if set (0 or less means unlimited)
+            if _max > 0 and page >= _max:
+                break
+                
             result = client.search_people(
                 company_id=company_id,
                 keywords=tag,
