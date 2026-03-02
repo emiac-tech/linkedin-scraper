@@ -59,9 +59,13 @@ curl -X POST http://localhost:8000/scrape \
   -d '{
     "company_url": "https://www.linkedin.com/company/google",
     "tags": ["software engineer"],
-    "max_pages": 0
+    "max_pages": 0,
+    "li_at": "YOUR_LI_AT_COOKIE",
+    "jsessionid": "YOUR_JSESSIONID_COOKIE"
   }'
 ```
+
+> **Note**: If you provide `li_at` and `jsessionid` in the request body, they will override the environment variables.
 
 ### Option 2: Run as CLI Script
 

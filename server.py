@@ -34,7 +34,7 @@ JSESSIONID = os.getenv("JSESSIONID", "")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
 GEO_URN = os.getenv("GEO_URN", "")
 SEARCH_MODE = os.getenv("SEARCH_MODE", "title").strip().lower()
-MAX_PAGES = int(os.getenv("MAX_PAGES", "5"))
+MAX_PAGES = int(os.getenv("MAX_PAGES", "0"))
 DELAY = float(os.getenv("DELAY_BETWEEN_REQUESTS", "2"))
 PORT = int(os.getenv("PORT", "8000"))
 
@@ -59,12 +59,21 @@ GRAPHQL_QUERY_IDS = [
 
 class LinkedInClient:
     def __init__(self, li_at, jsessionid):
+        if not li_at or not jsessionid:
+            # Only fail if these are absolutely required and not present
+            # But here we might be initializing the global client which might be empty if ENV vars are missing
+            # and that's okay as long as we provide cookies in the request.
+            pass
+        
         self.session = requests.Session()
-        clean_jsessionid = jsessionid.strip('"')
-        self.session.cookies.set("li_at", li_at, domain=".linkedin.com")
-        self.session.cookies.set("JSESSIONID", f'"{clean_jsessionid}"', domain=".linkedin.com")
+        clean_jsessionid = jsessionid.strip('"') if jsessionid else ""
+        if li_at:
+            self.session.cookies.set("li_at", li_at, domain=".linkedin.com")
+        if clean_jsessionid:
+            self.session.cookies.set("JSESSIONID", f'"{clean_jsessionid}"', domain=".linkedin.com")
+            self.session.headers.update({"csrf-token": clean_jsessionid})
+            
         self.session.headers.update({
-            "csrf-token": clean_jsessionid,
             "User-Agent": (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -241,15 +250,20 @@ class LinkedInClient:
 client = LinkedInClient(LI_AT, JSESSIONID)
 
 
-def scrape(company_url, tags, geo_urn="", search_mode=None, max_pages=None):
+def scrape(company_url, tags, geo_urn="", search_mode=None, max_pages=None, li_at=None, jsessionid=None):
     global SEARCH_MODE
     original_mode = SEARCH_MODE
     if search_mode:
         SEARCH_MODE = search_mode
 
+    # Use custom client if cookies are provided, otherwise use global client
+    active_client = client
+    if li_at and jsessionid:
+        active_client = LinkedInClient(li_at, jsessionid)
+    
     _max = int(max_pages) if max_pages is not None else MAX_PAGES
 
-    company_id, company_name, slug = client.get_company_id(company_url)
+    company_id, company_name, slug = active_client.get_company_id(company_url)
     if not company_id:
         SEARCH_MODE = original_mode
         return {"ok": False, "error": f"Could not resolve company: {company_url}"}
@@ -264,7 +278,7 @@ def scrape(company_url, tags, geo_urn="", search_mode=None, max_pages=None):
             if _max > 0 and page >= _max:
                 break
                 
-            result = client.search_people(
+            result = active_client.search_people(
                 company_id=company_id,
                 keywords=tag,
                 geo_urn=geo_urn or GEO_URN,
@@ -357,8 +371,10 @@ class Handler(BaseHTTPRequestHandler):
         geo_urn = body.get("geo_urn", "")
         search_mode = body.get("search_mode", "")
         max_pages = body.get("max_pages", None)
+        li_at = body.get("li_at", "")
+        jsessionid = body.get("jsessionid", "")
 
-        result = scrape(company_url, tags, geo_urn, search_mode, max_pages)
+        result = scrape(company_url, tags, geo_urn, search_mode, max_pages, li_at, jsessionid)
         status = 200 if result.get("ok") else 500
         self._json_response(status, result)
 
@@ -381,9 +397,9 @@ class Handler(BaseHTTPRequestHandler):
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    if not LI_AT or LI_AT == "your_li_at_cookie_here":
-        print("ERROR: Set LI_AT in .env")
-        exit(1)
+    # if not LI_AT or LI_AT == "your_li_at_cookie_here":
+    #     print("ERROR: Set LI_AT in .env")
+    #     exit(1)
 
     print(f"LinkedIn Scraper API running on http://0.0.0.0:{PORT}")
     print(f"  Search mode: {SEARCH_MODE}")
